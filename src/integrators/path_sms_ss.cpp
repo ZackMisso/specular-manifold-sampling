@@ -47,6 +47,9 @@ public:
     SingleScatterSMSPathIntegrator(const Properties &props) : Base(props) {
         m_sms_config = SMSConfig();
         m_sms_config.biased                 = props.bool_("biased", false);
+        m_sms_config.bernoulli              = props.bool_("bernoulli", false);
+        m_sms_config.blanchet_pmf           = props.bool_("blanchet_pmf", false);
+        m_sms_config.blanchet_cmf           = props.bool_("blanchet_cmf", false);
         m_sms_config.twostage               = props.bool_("twostage", false);
         m_sms_config.halfvector_constraints = props.bool_("halfvector_constraints", false);
         m_sms_config.mnee_init              = props.bool_("mnee_init", false);
