@@ -316,6 +316,10 @@ MTS_VARIANT MonteCarloIntegrator<Float, Spectrum>::MonteCarloIntegrator(const Pr
         Throw("\"max_depth\" must be set to -1 (infinite) or a value >= 0");
 }
 
+// -----------------------------------------------------------------------------
+// --- Blanchet Style Integrator
+// -----------------------------------------------------------------------------
+
 MTS_VARIANT MonteCarloIntegrator<Float, Spectrum>::~MonteCarloIntegrator() { }
 
 MTS_IMPLEMENT_CLASS_VARIANT(Integrator, Object, "integrator")

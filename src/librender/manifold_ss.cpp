@@ -222,7 +222,7 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                     evaluate_path_contribution(si, ei, si_final);
                 value += bsdf_val * specular_val;
             }
-        } else if (m_config.blanchet_pmf) {
+        } else if (m_config.blanchet_pmf && false) {
             // Blanchet in place
             Float val          = sampler->next_1d();
             Float r            = 0.65;
@@ -305,16 +305,168 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                 tmp_value = bsdf_val * specular_val;
 
                 // Apply contribution
+                // if (m < m_config.max_trials)
+                //    biased_value += tmp_value;
+                // if (m % 2 == 0)
+                //    even_value += tmp_value;
+                // if (m % 2 == 1)
+                //    odd_value += tmp_value;
+                // all_value += tmp_value;
+
+                // Apply contribution
                 if (m < m_config.max_trials)
                     biased_value += tmp_value;
-                if (m % 2 == 0)
+                if (m < total_m / 2)
                     even_value += tmp_value;
-                if (m % 2 == 1)
-                    odd_value += tmp_value;
+                // if (m % 2 == 1)
+                //    odd_value += tmp_value;
                 all_value += tmp_value;
+            }
+            // value = biased_value +
+            //        (all_value - 0.5 * (odd_value + even_value)) /
+            //        blanchet_pmf;
+
+            value = biased_value + (all_value - even_value) / blanchet_pmf;
+        } else if (m_config.blanchet_pmf) {
+            // Blanchet in place
+            Float val          = sampler->next_1d();
+            Float r            = 0.65;
+            Float blanchet_pmf = r;
+            Float blanchet_cmf = blanchet_pmf;
+            int blanchet_n     = 0;
+
+            while (blanchet_cmf < val) {
+                ++blanchet_n;
+                blanchet_pmf *= 1.0 - r;
+                blanchet_cmf += blanchet_pmf;
+            }
+
+            Spectrum biased_value = Spectrum(0.0);
+            Spectrum odd_value    = Spectrum(0.0);
+            Spectrum even_value   = Spectrum(0.0);
+            Spectrum all_value    = Spectrum(0.0);
+
+            std::vector<Vector3f> solutions_all;
+            std::vector<Vector3f> solutions_even;
+            std::vector<Vector3f> solutions_odd;
+            int total_m = m_config.max_trials * std::pow(2, blanchet_n + 1);
+
+            for (int m = 0; m < total_m; ++m) {
+                /////////////////////////////////
+                // compute the  value as intended
+                /////////////////////////////////
+                Spectrum tmp_value = Spectrum(0.0);
+
+                auto [success, si_final, unused] =
+                    sample_path(specular_shape, si, ei, sampler, n_offset);
+                if (!success) {
+                    stats_solver_failed++;
+                    continue;
+                }
+                stats_solver_succeeded++;
+                Vector3f direction = normalize(si_final.p - si.p);
+
+                // We already now there is no obstacle between si & si_final,
+                // but we need to explicitly check visibility between the
+                // si_final and the light source.
+                Ray3f ray_vis;
+                if (ei.is_directional()) {
+                    ray_vis = Ray3f(si_final.p, ei.d, si.time, si.wavelengths);
+                } else {
+                    Vector3f d = si_final.p - ei.p;
+                    Float dist = norm(d);
+                    d *= rcp(dist);
+                    ray_vis =
+                        Ray3f(ei.p, d,
+                              math::RayEpsilon<Float> * (1.f + hmax(abs(ei.p))),
+                              dist * (1.f - math::RayEpsilon<Float>), si.time,
+                              si.wavelengths);
+                }
+                if (m_scene->ray_test(ray_vis)) {
+                    continue;
+                }
+
+                // Check if this is a new and unique solution
+                bool duplicate_odd  = false;
+                bool duplicate_even = false;
+                bool duplicate_all  = false;
+
+                if (m % 2 == 1) {
+                    for (size_t k = 0; k < solutions_odd.size(); ++k) {
+                        if (abs(dot(direction, solutions_odd[k]) - 1.f) <
+                            m_config.uniqueness_threshold) {
+                            duplicate_odd = true;
+                            break;
+                        }
+                    }
+                    duplicate_even = true;
+                }
+                if (m % 2 == 0) {
+                    for (size_t k = 0; k < solutions_even.size(); ++k) {
+                        if (abs(dot(direction, solutions_even[k]) - 1.f) <
+                            m_config.uniqueness_threshold) {
+                            duplicate_even = true;
+                            break;
+                        }
+                    }
+                    duplicate_odd = true;
+                }
+                for (size_t k = 0; k < solutions_all.size(); ++k) {
+                    if (abs(dot(direction, solutions_all[k]) - 1.f) <
+                        m_config.uniqueness_threshold) {
+                        duplicate_all = true;
+                        break;
+                    }
+                }
+                if (duplicate_odd && duplicate_even && duplicate_all) {
+                    continue;
+                }
+
+                // Record this new solution
+                // solutions.push_back(direction);
+
+                // Account for BSDF at shading point
+                BSDFContext ctx;
+                Spectrum bsdf_val =
+                    si.bsdf()->eval(ctx, si, si.to_local(direction));
+
+                // Contribution
+                Spectrum specular_val =
+                    evaluate_path_contribution(si, ei, si_final);
+                tmp_value = bsdf_val * specular_val;
+
+                // Apply contribution
+                // if (m < m_config.max_trials)
+                //    biased_value += tmp_value;
+                // if (m % 2 == 0)
+                //    even_value += tmp_value;
+                // if (m % 2 == 1)
+                //    odd_value += tmp_value;
+                // all_value += tmp_value;
+
+                // Apply contribution
+                if (m < m_config.max_trials)
+                    biased_value += tmp_value;
+                if (!duplicate_odd && m % 2 == 1) {
+                    solutions_odd.push_back(direction);
+                    odd_value += tmp_value;
+                }
+                if (!duplicate_even && m % 2 == 0) {
+                    solutions_even.push_back(direction);
+                    even_value += tmp_value;
+                }
+                if (!duplicate_all) {
+                    all_value += tmp_value;
+                    solutions_all.push_back(direction);
+                }
+                // if (m % 2 == 1)
+                //    odd_value += tmp_value;
+                // all_value += tmp_value;
             }
             value = biased_value +
                     (all_value - 0.5 * (odd_value + even_value)) / blanchet_pmf;
+
+            // value = biased_value + (all_value - even_value) / blanchet_pmf;
         } else if (m_config.blanchet_ind) {
 
             int blanchet_n = m_config.blanchet_n;
@@ -388,15 +540,19 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                 tmp_value = bsdf_val * specular_val;
 
                 // Apply contribution
-                if (m < m_config.max_trials)
-                    biased_value += tmp_value;
-                if (m % 2 == 0)
+                // if (m < m_config.max_trials)
+                //     biased_value += tmp_value;
+                // if (m % 2 == 0)
+                //     even_value += tmp_value;
+                // if (m % 2 == 1)
+                //     odd_value += tmp_value;
+                // all_value += tmp_value;
+                if (m < total_m / 2)
                     even_value += tmp_value;
-                if (m % 2 == 1)
-                    odd_value += tmp_value;
                 all_value += tmp_value;
             }
-            value = (all_value - 0.5 * (odd_value + even_value));
+            // value = (all_value - 0.5 * (odd_value + even_value));
+            value = all_value - even_value;
         } else {
             value = 0.0;
             std::cout << "has not chosen a valid estimation scheme"

@@ -9,12 +9,13 @@
 NAMESPACE_BEGIN(mitsuba)
 
 struct SMSConfig {
-    bool biased       = true; // Switch from unbiased to biased SMS?
-    bool bernoulli    = false;
-    bool blanchet_pmf = false;
-    bool blanchet_cmf = false;
-    bool blanchet_ind = false;
-    bool twostage     = false; // Use two-stage solver for normal maps?
+    bool biased           = true; // Switch from unbiased to biased SMS?
+    bool bernoulli        = false;
+    bool blanchet_pmf     = false;
+    bool blanchet_pmf_var = false;
+    bool blanchet_cmf     = false;
+    bool blanchet_ind     = false;
+    bool twostage         = false; // Use two-stage solver for normal maps?
     bool halfvector_constraints =
         false; // Switch back to original half-vector based constraints?
     bool mnee_init = false; // Use deterministic MNEE initialization instead?

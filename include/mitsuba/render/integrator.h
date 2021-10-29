@@ -160,7 +160,7 @@ protected:
                               Float *aovs,
                               size_t sample_count = size_t(-1)) const;
 
-    void render_sample(const Scene *scene,
+    virtual void render_sample(const Scene *scene,
                        const Sensor *sensor,
                        Sampler *sampler,
                        ImageBlock *block,
@@ -224,7 +224,58 @@ protected:
     int m_rr_depth;
 };
 
+// /*
+//  * \brief Base class of all Telescoping-debiased based Monte Carlo integrators, which compute
+//  * unbiased solutions to the rendering equation (and optionally the radiative
+//  * transfer equation).
+//  */
+// template <typename Float, typename Spectrum>
+// class MTS_EXPORT_RENDER BlanchetIntegrator : public SamplingIntegrator<Float, Spectrum> {
+// public:
+//     MTS_IMPORT_BASE(SamplingIntegrator)
+
+//     bool render(Scene *scene, Sensor *sensor) override;
+
+// protected:
+//     /// Create an integrator
+//     BlanchetIntegrator(const Properties &props);
+
+//     virtual std::pair<Spectrum, Mask> sample(const Scene *scene,
+//         Sampler *sampler,
+//         int blanchet_n,
+//         const RayDifferential3f &ray,
+//         const Medium *medium = nullptr,
+//         Float *aovs = nullptr,
+//         Mask active = true) const;
+
+//     virtual void render_block(const Scene *scene,
+//                             const Sensor *sensor,
+//                             Sampler *sampler,
+//                             ImageBlock *block,
+//                             Float *aovs,
+//                             size_t sample_count = size_t(-1)) const;
+
+//     virtual void render_sample(const Scene *scene,
+//                        const Sensor *sensor,
+//                        Sampler *sampler,
+//                        ImageBlock *block,
+//                        Float *aovs,
+//                        const Vector2f &pos,
+//                        ScalarFloat diff_scale_factor,
+//                        Mask active = true) const;
+
+//     /// Virtual destructor
+//     virtual ~BlanchetIntegrator();
+
+//     MTS_DECLARE_CLASS()
+// protected:
+//     int m_max_depth;
+//     int m_rr_depth;
+// };
+
 MTS_EXTERN_CLASS_RENDER(Integrator)
 MTS_EXTERN_CLASS_RENDER(SamplingIntegrator)
 MTS_EXTERN_CLASS_RENDER(MonteCarloIntegrator)
+// MTS_EXTERN_CLASS_RENDER(BlanchetIntegrator)
+
 NAMESPACE_END(mitsuba)
