@@ -1,4 +1,7 @@
 #include <mitsuba/core/properties.h>
+#include <mitsuba/core/qmc.h>
+#include <mitsuba/core/random.h>
+#include <mitsuba/core/spectrum.h>
 #include <mitsuba/render/sampler.h>
 
 NAMESPACE_BEGIN(mitsuba)
@@ -69,46 +72,103 @@ Sampler<Float, Spectrum>::current_sample_index() const {
     return m_sample_index * m_samples_per_wavefront + wavefront_sample_offsets;
 }
 
-//! @}
-// =======================================================================
+MTS_VARIANT LowDiscrepancySampler<Float, Spectrum>::LowDiscrepancySampler(
+    const Properties &props)
+    : Base(props) {
+    // Make sure sample_count is power of two and square (e.g. 4, 16, 64,
+    // 256, 1024, ...)
+    ScalarUInt32 res = 2;
+    while (sqr(res) < m_sample_count)
+        res = math::round_to_power_of_two(++res);
 
-// =======================================================================
-//! @{ \name PCG32Sampler implementations
-// =======================================================================
+    // if (m_sample_count != sqr(res))
+    //     Log(Warn,
+    //         "Sample count should be square and power of two, rounding to
+    //         "
+    //         "%i",
+    //         sqr(res));
 
-// MTS_VARIANT PCG32Sampler<Float, Spectrum>::PCG32Sampler(const Properties
-// &props)
-//     : Base(props) {}
+    m_sample_count = sqr(res);
+}
 
-// MTS_VARIANT void PCG32Sampler<Float, Spectrum>::seed(uint64_t seed_offset) {
-//     Base::seed(seed_offset);
+MTS_VARIANT LowDiscrepancySampler<Float, Spectrum>::LowDiscrepancySampler(
+    int res_s, const Properties &props)
+    : Base(props) {
+    // Make sure sample_count is power of two and square (e.g. 4, 16, 64,
+    // 256, 1024, ...)
+    m_sample_count = res_s;
+    // res            = sqrt(m_sample_count);
+    // ScalarUInt32 res = res_s;
+    // while (sqr(res) < m_sample_count)
+    //     res = math::round_to_power_of_two(++res);
 
-//     if (!m_rng)
-//         m_rng = std::make_unique<PCG32>();
+    // if (m_sample_count != sqr(res))
+    //     Log(Warn,
+    //         "Sample count should be square and power of two, rounding
+    // to
+    //         "
+    //         "%i",
+    //         sqr(res));
 
-//     uint64_t seed_value = m_base_seed + seed_offset;
+    // m_sample_count = sqr(res);
+}
 
-//     if constexpr (is_dynamic_array_v<Float>) {
-//         NotImplementedError("dynamic array");
-//         // NotI
-//         UInt64 idx = arange<UInt64>(1);
-//         m_rng->seed(sample_tea_64(seed_value, idx),
-//                     sample_tea_64(idx, seed_value));
-//     } else {
-//         m_rng->seed(seed_value, PCG32_DEFAULT_STREAM + arange<UInt64>());
-//     }
+// MTS_VARIANT ref<Sampler<Float, Spectrum>>
+// LowDiscrepancySampler<Float, Spectrum>::clone() override {
+//     LowDiscrepancySampler *sampler   = new LowDiscrepancySampler();
+//     sampler->m_sample_count          = m_sample_count;
+//     sampler->m_samples_per_wavefront = m_samples_per_wavefront;
+//     sampler->m_base_seed             = m_base_seed;
+//     return sampler;
 // }
 
-// MTS_VARIANT size_t PCG32Sampler<Float, Spectrum>::wavefront_size() const {
-//     if (m_rng == nullptr)
-//         return 0;
-//     else
-//         return enoki::slices(m_rng->state);
+// void seed(uint64_t seed_offset, size_t wavefront_size) override {
+//     Base::seed(seed_offset, wavefront_size);
+//     m_scramble_seed = compute_per_sequence_seed(seed_offset);
 // }
 
-//! @}
-// =======================================================================
+MTS_VARIANT void
+LowDiscrepancySampler<Float, Spectrum>::seed(uint64_t seed_offset) {
+    Base::seed(seed_offset);
+    m_scramble_seed = compute_per_sequence_seed(seed_offset);
+}
+
+MTS_VARIANT Float LowDiscrepancySampler<Float, Spectrum>::next_1d_test() {
+    // Assert(seeded());
+
+    uint32_t sample_indices = current_sample_index();
+    uint32_t perm_seed      = m_scramble_seed + m_dimension_index++;
+
+    // Shuffle the samples order
+    uint32_t i = permute(sample_indices, m_sample_count, perm_seed);
+
+    // Compute scramble value (unique per sequence)
+    uint32_t scramble = sample_tea_32(m_scramble_seed, uint32_t(0x48bc48eb));
+
+    return radical_inverse_2(i, scramble);
+}
+
+MTS_VARIANT typename LowDiscrepancySampler<Float, Spectrum>::Point2f
+LowDiscrepancySampler<Float, Spectrum>::next_2d_test() {
+    // Assert(seeded());
+
+    uint32_t sample_indices = current_sample_index();
+    uint32_t perm_seed      = m_scramble_seed + m_dimension_index++;
+
+    // Shuffle the samples order
+    uint32_t i = permute(sample_indices, m_sample_count, perm_seed);
+
+    // Compute scramble values (unique per sequence) for both axis
+    uint32_t scramble_x = sample_tea_32(m_scramble_seed, uint32_t(0x98bc51ab));
+    uint32_t scramble_y = sample_tea_32(m_scramble_seed, uint32_t(0x04223e2d));
+
+    Float x = radical_inverse_2(i, scramble_x), y = sobol_2(i, scramble_y);
+
+    return Point2f(x, y);
+}
 
 MTS_IMPLEMENT_CLASS_VARIANT(Sampler, Object, "sampler")
 MTS_INSTANTIATE_CLASS(Sampler)
+MTS_IMPLEMENT_CLASS_VARIANT(LowDiscrepancySampler, Object, "ldsampler")
+MTS_INSTANTIATE_CLASS(LowDiscrepancySampler)
 NAMESPACE_END(mitsuba)

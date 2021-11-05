@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <mitsuba/core/qmc.h>
 #include <mitsuba/render/manifold_ss.h>
 #include <mitsuba/render/microfacet.h>
 #include <mitsuba/render/sampler.h>
@@ -36,6 +37,123 @@ SpecularManifoldSingleScatter<Float, Spectrum>::SpecularManifoldSingleScatter(
 MTS_VARIANT
 SpecularManifoldSingleScatter<Float,
                               Spectrum>::~SpecularManifoldSingleScatter() {}
+
+// // template <typename Float, typename Spectrum>
+// class LowDiscrepancySampler final : public Sampler<Float, Spectrum> {
+// public:
+//     MTS_IMPORT_BASE(Sampler, m_sample_count, m_base_seed, // seeded,
+//                     m_samples_per_wavefront, m_dimension_index,
+//                     current_sample_index, compute_per_sequence_seed)
+//     MTS_IMPORT_TYPES()
+
+//     LowDiscrepancySampler(const Properties &props = Properties())
+//         : Base(props) {
+//         // Make sure sample_count is power of two and square (e.g. 4, 16, 64,
+//         // 256, 1024, ...)
+//         ScalarUInt32 res = 2;
+//         while (sqr(res) < m_sample_count)
+//             res = math::round_to_power_of_two(++res);
+
+//         if (m_sample_count != sqr(res))
+//             Log(Warn,
+//                 "Sample count should be square and power of two, rounding to
+//                 "
+//                 "%i",
+//                 sqr(res));
+
+//         m_sample_count = sqr(res);
+//     }
+
+//     LowDiscrepancySampler(int res_s, const Properties &props = Properties())
+//         : Base(props) {
+//         // Make sure sample_count is power of two and square (e.g. 4, 16, 64,
+//         // 256, 1024, ...)
+//         m_sample_count = res_s;
+//         // res            = sqrt(m_sample_count);
+//         // ScalarUInt32 res = res_s;
+//         // while (sqr(res) < m_sample_count)
+//         //     res = math::round_to_power_of_two(++res);
+
+//         // if (m_sample_count != sqr(res))
+//         //     Log(Warn,
+//         //         "Sample count should be square and power of two, rounding
+//         to
+//         //         "
+//         //         "%i",
+//         //         sqr(res));
+
+//         // m_sample_count = sqr(res);
+//     }
+
+//     ref<Sampler<Float, Spectrum>> clone() override {
+//         LowDiscrepancySampler *sampler   = new LowDiscrepancySampler();
+//         sampler->m_sample_count          = m_sample_count;
+//         sampler->m_samples_per_wavefront = m_samples_per_wavefront;
+//         sampler->m_base_seed             = m_base_seed;
+//         return sampler;
+//     }
+
+//     // void seed(uint64_t seed_offset, size_t wavefront_size) override {
+//     //     Base::seed(seed_offset, wavefront_size);
+//     //     m_scramble_seed = compute_per_sequence_seed(seed_offset);
+//     // }
+
+//     void seed(uint64_t seed_offset) override {
+//         Base::seed(seed_offset);
+//         m_scramble_seed = compute_per_sequence_seed(seed_offset);
+//     }
+
+//     // TODO: I am not really sure what this does
+//     virtual size_t wavefront_size() const override { return 1; }
+
+//     Float next_1d(Mask /*active*/ = true) override {
+//         // Assert(seeded());
+
+//         UInt32 sample_indices = current_sample_index();
+//         UInt32 perm_seed      = m_scramble_seed + m_dimension_index++;
+
+//         // Shuffle the samples order
+//         UInt32 i = permute(sample_indices, m_sample_count, perm_seed);
+
+//         // Compute scramble value (unique per sequence)
+//         UInt32 scramble = sample_tea_32(m_scramble_seed, UInt32(0x48bc48eb));
+
+//         return radical_inverse_2(i, scramble);
+//     }
+
+//     Point2f next_2d(Mask /*active*/ = true) override {
+//         // Assert(seeded());
+
+//         UInt32 sample_indices = current_sample_index();
+//         UInt32 perm_seed      = m_scramble_seed + m_dimension_index++;
+
+//         // Shuffle the samples order
+//         UInt32 i = permute(sample_indices, m_sample_count, perm_seed);
+
+//         // Compute scramble values (unique per sequence) for both axis
+//         UInt32 scramble_x = sample_tea_32(m_scramble_seed,
+//         UInt32(0x98bc51ab)); UInt32 scramble_y =
+//         sample_tea_32(m_scramble_seed, UInt32(0x04223e2d));
+
+//         Float x = radical_inverse_2(i, scramble_x), y = sobol_2(i,
+//         scramble_y);
+
+//         return Point2f(x, y);
+//     }
+
+//     std::string to_string() const override {
+//         std::ostringstream oss;
+//         oss << "LowDiscrepancySampler [" << std::endl
+//             << "  sample_count = " << m_sample_count << std::endl
+//             << "]";
+//         return oss.str();
+//     }
+
+//     MTS_DECLARE_CLASS()
+// private:
+//     /// Per-sequence scramble seed
+//     UInt32 m_scramble_seed;
+// };
 
 MTS_VARIANT Spectrum
 SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
@@ -166,9 +284,23 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
             // Biased SMS
 
             std::vector<Vector3f> solutions;
+            LowDiscrepancySampler<Float, Spectrum> strat_sampler =
+                LowDiscrepancySampler<Float, Spectrum>(m_config.max_trials,
+                                                       Properties());
+            // LowDiscrepancySampler strat_sampler =
+            //     LowDiscrepancySampler(m_config.max_trials);
+            strat_sampler.seed(0xFFFFFFFF * sampler->next_1d());
+
             for (int m = 0; m < m_config.max_trials; ++m) {
-                auto [success, si_final, unused] =
-                    sample_path(specular_shape, si, ei, sampler, n_offset);
+                if (m != 0)
+                    strat_sampler.advance();
+                // sampling stratified path
+                auto strat_p = specular_shape->sample_position(
+                    si.time, strat_sampler.next_2d_test());
+                // auto [success, si_final, unused] = sample_path(
+                //     specular_shape, si, ei, sampler, n_offset);
+                auto [success, si_final, unused] = sample_path(
+                    specular_shape, si, ei, sampler, n_offset, strat_p.p);
                 if (!success) {
                     stats_solver_failed++;
                     continue;

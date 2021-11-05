@@ -2,6 +2,7 @@
 
 #include <mitsuba/core/logger.h>
 #include <mitsuba/core/object.h>
+#include <mitsuba/core/properties.h>
 #include <mitsuba/core/random.h>
 #include <mitsuba/core/vector.h>
 #include <mitsuba/mitsuba.h>
@@ -108,6 +109,55 @@ protected:
 //     std::unique_ptr<PCG32> m_rng;
 // };
 
+template <typename Float, typename Spectrum>
+class LowDiscrepancySampler final : public Sampler<Float, Spectrum> {
+public:
+    MTS_IMPORT_BASE(Sampler, m_sample_count, m_base_seed, // seeded,
+                    m_samples_per_wavefront, m_dimension_index,
+                    current_sample_index, compute_per_sequence_seed)
+    MTS_IMPORT_TYPES()
+
+    LowDiscrepancySampler(const Properties &props = Properties());
+
+    LowDiscrepancySampler(int res_s, const Properties &props = Properties());
+
+    ref<Sampler<Float, Spectrum>> clone() override {
+        LowDiscrepancySampler *sampler   = new LowDiscrepancySampler();
+        sampler->m_sample_count          = m_sample_count;
+        sampler->m_samples_per_wavefront = m_samples_per_wavefront;
+        sampler->m_base_seed             = m_base_seed;
+        return sampler;
+    }
+
+    // void seed(uint64_t seed_offset, size_t wavefront_size) override {
+    //     Base::seed(seed_offset, wavefront_size);
+    //     m_scramble_seed = compute_per_sequence_seed(seed_offset);
+    // }
+
+    void seed(uint64_t seed_offset) override;
+
+    // TODO: I am not really sure what this does
+    virtual size_t wavefront_size() const override { return 1; }
+
+    Float next_1d_test();
+
+    Point2f next_2d_test();
+
+    std::string to_string() const override {
+        std::ostringstream oss;
+        oss << "LowDiscrepancySampler [" << std::endl
+            << "  sample_count = " << m_sample_count << std::endl
+            << "]";
+        return oss.str();
+    }
+
+    MTS_DECLARE_CLASS()
+protected:
+    /// Per-sequence scramble seed
+    uint32_t m_scramble_seed;
+};
+
 MTS_EXTERN_CLASS_RENDER(Sampler)
+MTS_EXTERN_CLASS_RENDER(LowDiscrepancySampler)
 // MTS_EXTERN_CLASS_RENDER(PCG32Sampler)
 NAMESPACE_END(mitsuba)
