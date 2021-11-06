@@ -264,6 +264,9 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                 inv_prob_estimate += 1.f;
                 iterations++;
 
+                // std::cout << "max_trials: " << m_config.max_trials <<
+                // std::endl;
+
                 if (m_config.max_trials > 0 &&
                     iterations > m_config.max_trials) {
                     /* There is a tiny chance always to sample super weird paths
@@ -294,11 +297,12 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
             for (int m = 0; m < m_config.max_trials; ++m) {
                 if (m != 0)
                     strat_sampler.advance();
+                Point2f pt = strat_sampler.next_2d_test();
+                // std::cout << pt << std::endl;
                 // sampling stratified path
-                auto strat_p = specular_shape->sample_position(
-                    si.time, strat_sampler.next_2d_test());
-                // auto [success, si_final, unused] = sample_path(
-                //     specular_shape, si, ei, sampler, n_offset);
+                auto strat_p = specular_shape->sample_position(si.time, pt);
+                // auto [success, si_final, unused] =
+                //     sample_path(specular_shape, si, ei, sampler, n_offset);
                 auto [success, si_final, unused] = sample_path(
                     specular_shape, si, ei, sampler, n_offset, strat_p.p);
                 if (!success) {
