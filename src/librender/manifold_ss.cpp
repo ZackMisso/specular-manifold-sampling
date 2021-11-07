@@ -379,6 +379,7 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
 
             std::vector<Vector3f> solutions;
             int total_m = m_config.max_trials * std::pow(2, blanchet_n + 1);
+
             for (int m = 0; m < total_m; ++m) {
                 /////////////////////////////////
                 // compute the  value as intended
@@ -487,14 +488,27 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
             std::vector<Vector3f> solutions_odd;
             int total_m = m_config.max_trials * std::pow(2, blanchet_n + 1);
 
+            LowDiscrepancySampler<Float, Spectrum> strat_sampler =
+                LowDiscrepancySampler<Float, Spectrum>(m_config.max_trials);
+
+            strat_sampler.seed(0xFFFFFFFF * sampler->next_1d());
+
             for (int m = 0; m < total_m; ++m) {
                 /////////////////////////////////
                 // compute the  value as intended
                 /////////////////////////////////
                 Spectrum tmp_value = Spectrum(0.0);
 
-                auto [success, si_final, unused] =
-                    sample_path(specular_shape, si, ei, sampler, n_offset);
+                if (m != 0)
+                    strat_sampler.advance();
+                Point2f pt = strat_sampler.next_2d_test();
+                // std::cout << pt << std::endl;
+                // sampling stratified path
+                auto strat_p = specular_shape->sample_position(si.time, pt);
+                // auto [success, si_final, unused] =
+                //     sample_path(specular_shape, si, ei, sampler, n_offset);
+                auto [success, si_final, unused] = sample_path(
+                    specular_shape, si, ei, sampler, n_offset, strat_p.p);
                 if (!success) {
                     stats_solver_failed++;
                     continue;
@@ -527,7 +541,7 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                 bool duplicate_even = false;
                 bool duplicate_all  = false;
 
-                if (m % 2 == 1) {
+                if (m < total_m / 2) {
                     for (size_t k = 0; k < solutions_odd.size(); ++k) {
                         if (abs(dot(direction, solutions_odd[k]) - 1.f) <
                             m_config.uniqueness_threshold) {
@@ -536,8 +550,7 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                         }
                     }
                     duplicate_even = true;
-                }
-                if (m % 2 == 0) {
+                } else if (m >= total_m / 2) {
                     for (size_t k = 0; k < solutions_even.size(); ++k) {
                         if (abs(dot(direction, solutions_even[k]) - 1.f) <
                             m_config.uniqueness_threshold) {
@@ -553,9 +566,6 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                         duplicate_all = true;
                         break;
                     }
-                }
-                if (duplicate_odd && duplicate_even && duplicate_all) {
-                    continue;
                 }
 
                 // Record this new solution
@@ -581,13 +591,19 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                 // all_value += tmp_value;
 
                 // Apply contribution
-                if (m < m_config.max_trials)
-                    biased_value += tmp_value;
-                if (!duplicate_odd && m % 2 == 1) {
+                // std::cout << "max_tris:" << m_config.max_trials << std::endl;
+                // if (m < m_config.max_trials)
+                biased_value += tmp_value;
+
+                if (duplicate_odd && duplicate_even && duplicate_all) {
+                    continue;
+                }
+
+                if (!duplicate_odd && m < total_m / 2) {
                     solutions_odd.push_back(direction);
                     odd_value += tmp_value;
                 }
-                if (!duplicate_even && m % 2 == 0) {
+                if (!duplicate_even && m >= total_m / 2) {
                     solutions_even.push_back(direction);
                     even_value += tmp_value;
                 }
@@ -595,12 +611,34 @@ SpecularManifoldSingleScatter<Float, Spectrum>::specular_manifold_sampling(
                     all_value += tmp_value;
                     solutions_all.push_back(direction);
                 }
+
+                // THIS CURRENT IMPLEMENTATION ASSUMES THAT M=1
+                // Apply contribution
+                // biased_value += tmp_value;
+                // if (!duplicate_odd && m < total_m / 2) {
+                //     solutions_odd.push_back(direction);
+                //     odd_value += tmp_value;
+                // }
+                // if (!duplicate_even && m >= total_m / 2) {
+                //     solutions_even.push_back(direction);
+                //     even_value += tmp_value;
+                // }
+                // if (!duplicate_all) {
+                //     all_value += tmp_value;
+                //     solutions_all.push_back(direction);
+                // }
+
                 // if (m % 2 == 1)
                 //    odd_value += tmp_value;
                 // all_value += tmp_value;
             }
-            value = biased_value +
+
+            value = biased_value / Float(total_m) +
                     (all_value - 0.5 * (odd_value + even_value)) / blanchet_pmf;
+
+            // value = biased_value +
+            //         (all_value - 0.5 * (odd_value + even_value)) /
+            //         blanchet_pmf;
 
             // value = biased_value + (all_value - even_value) / blanchet_pmf;
         } else if (m_config.blanchet_ind) {
